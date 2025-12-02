@@ -11,10 +11,17 @@ library(shinyjs) # for Javascript for interactivity
 library(shinyWidgets) # for widgets
 library(shinythemes) # for themes
 library(digest) # for creating a unique filename
-#library(here) # for referencing file path
+library(janitor) # for cleaned names
 
 # Read in Wind mill data
-wind_data <- read_csv("../Data/data-windmills.csv")
+wind_data <- read_csv(gzcon(url("https://raw.githubusercontent.com/edsandorf/evdce/refs/heads/main/Data/data-windmills.csv"))) |>
+  clean_names()
+
+wind_data <- wind_data %>%
+  mutate(
+    female = as.character(female),
+    choice = as.character(choice)
+  )
 
 outputDir <- "survey_responses" 
 
@@ -409,23 +416,39 @@ ui <- dashboardPage(
       # Third tab content
       tabItem(tabName = "explore_data",
               
-              # Give the page a title
-              titlePanel("Exploring the Choices"),
-              plotOutput("plot"),
+              title = "Exploring the Choices",
               
-              # Slider Input: Use the number of rows from YOUR data (wind_data)
-              sliderInput(
-                "Frequency", 
-                "Number of Respondents", 
-                min = 1, 
-                max = nrow(wind_data), 
-                value = min(100, nrow(wind_data))
+              plotOutput('plot_wind'),
+              
+              hr(),
+              
+              fluidRow(
+                column(3,
+                       h4("Exploring the Choices"),
+                       sliderInput('sampleSize', 'Sample Size', 
+                                   min=1, max=nrow(wind_data),
+                                   value=min(1000, nrow(wind_data)), 
+                                   step=500, round=0),
+                       br(),
+                       checkboxInput('jitter', 'Jitter'),
+                       checkboxInput('smooth', 'Smooth')
+                ),
+                column(4, offset = 1,
+                       selectInput('x', 'X', names(wind_data)),
+                       selectInput('y', 'Y', names(wind_data), names(wind_data)[[2]]),
+                       selectInput('color', 'Color', c('None', names(wind_data)))
+                ),
+                column(4,
+                       selectInput('facet_row', 'Facet Row',
+                                   c(None='.', names(wind_data[sapply(wind_data, is.character)]))),
+                       selectInput('facet_col', 'Facet Column',
+                                   c(None='.', names(wind_data[sapply(wind_data, is.character)])))
+                )
               )
-            )
     )
   )
 )
-
+)
 server <- function(input, output, session) {
   
   # --- Setup for Choice Tasks (Inside Server for Multi-User Safety) ---
@@ -625,24 +648,42 @@ server <- function(input, output, session) {
   })
   
   # Exploring data tab
-  output$plot <- renderPlot({
-    
-    # Get the sample size from the slider
-    n_obs <- seq_len(input$frequency)
-    
-    # 1. Select the top 'n' rows for plotting
-    data_to_plot <- wind_data[n_obs, ]
-    
-    # 2. Render a Histogram of the first numeric column ('cost' is assumed)
-    hist(
-      data_to_plot[[numeric_col_name]], 
-      breaks = 20, 
-      main = paste("Histogram of", numeric_col_name, "for", input$frequency, "Observations"),
-      xlab = numeric_col_name
-    )
+  # Sample a subset of the wind_data based on the slider
+  dataset_wind <- reactive({
+    wind_data[sample(nrow(wind_data), input$sampleSize), ]
   })
+  
+  # Make the main plot for the "Exploring the Choices" tab
+  output$plot_wind <- renderPlot({
+    
+    data_plot <- dataset_wind()
+    
+    # Base plot with user selected x and y
+    p <- ggplot(data_plot, aes_string(x = input$x, y = input$y)) +
+      geom_point()
+    
+    # Add color mapping only if something is selected
+    if (input$color != "None") {
+      p <- p + aes_string(color = input$color)
+    }
+    
+    # Build facet formula from the dropdowns
+    facets <- paste(input$facet_row, "~", input$facet_col)
+    if (facets != ". ~ .") {
+      p <- p + facet_grid(as.formula(facets))
+    }
+    
+    # Optional layers based on checkboxes
+    #if (input$jitter) {
+      #p <- p + geom_jitter()
+    })
+    
+    #if (input$smooth) {
+      #p <- p + geom_smooth(se = FALSE)
+    #}
+    
+    print (p)
 }
 
-enableBookmarking(store = "url")
 # Run the application
 shinyApp(ui = ui, server = server)
