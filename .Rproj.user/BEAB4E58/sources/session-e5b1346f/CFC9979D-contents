@@ -1,0 +1,33 @@
+# Third tab content
+tabItem(tabName = "explore_data",
+        
+        title = "Exploring the Choices",
+        
+        plotOutput('plot_wind'),
+        
+        hr(),
+        
+        fluidRow(
+          column(3,
+                 h4("Exploring the Choices"),
+                 sliderInput('sampleSize', 'Sample Size', 
+                             min=1, max=nrow(wind_data),
+                             value=min(1000, nrow(wind_data)), 
+                             step=500, round=0),
+                 br(),
+                 checkboxInput('jitter', 'Jitter'),
+                 checkboxInput('smooth', 'Smooth')
+          ),
+          column(4, offset = 1,
+                 selectInput('x', 'X', names(wind_data)),
+                 selectInput('y', 'Y', names(wind_data), names(wind_data)[[2]]),
+                 selectInput('color', 'Color', c('None', names(wind_data)))
+          ),
+          column(4,
+                 selectInput('facet_row', 'Facet Row',
+                             c(None='.', names(wind_data[sapply(wind_data, is.character)]))),
+                 selectInput('facet_col', 'Facet Column',
+                             c(None='.', names(wind_data[sapply(wind_data, is.character)])))
+                 
+          )
+        )
