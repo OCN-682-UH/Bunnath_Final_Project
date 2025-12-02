@@ -3,7 +3,7 @@
 
 #This Shiny app presents a sample survey using wind farm data to illustrate how people make choices between different renewable energy options.
 
-# Load Libraries
+## -------- Load Libraries --------
 library(shiny) # for building Shiny app
 library(shinydashboard) # for creating dashboard
 library(tidyverse) # for data wrangling
@@ -11,14 +11,48 @@ library(shinyjs) # for Javascript for interactivity
 library(shinyWidgets) # for widgets
 library(shinythemes) # for themes
 library(digest) # for creating a unique filename
-#library(here) # for referencing file path
+library(janitor) # for cleaned names
 
-# Read in Wind mill data
-wind_data <- read_csv("../Data/data-windmills.csv")
 
+## -------- Load Data --------
+wind_data <- read_csv(gzcon(url("https://raw.githubusercontent.com/edsandorf/evdce/refs/heads/main/Data/data-windmills.csv"))) |>
+  clean_names()
+
+## -------Tidy the Data-------
+
+# Mutate core variables used in analysis and plotting
+data_wind <- wind_data |>
+  mutate(
+    choice      = as_factor(choice),
+    choice_task = as_factor(choice_task),
+    female      = as_factor(female),
+    education   = as_factor(education),
+    age_group   = cut(age, breaks = seq(15, 90, by = 15))
+  ) |>
+  # Add task-level and individual-level completion diagnostics
+  group_by(choice_task) |>
+  mutate(
+    missing_share_task = mean(is.na(choice)) # share of missing responses per choice task
+  ) |>
+  group_by(id_individual, .add = TRUE) |>
+  mutate(
+    completed_tasks = sum(!is.na(choice)), # number of tasks completed by each respondent
+    completion_rate = mean(!is.na(choice)) # share of tasks completed by each respondent
+  ) |>
+  ungroup()
+
+# Create a set of global variables for the DCE structure
+n_alts        <- 3
+n_choices     <- 10
+n_rows_data   <- nrow(data_wind)
+n_individuals <- data_wind |>
+  select(id_individual) |>
+  n_distinct()
+sq_alt <- 1
+
+## ------- Create the output directory if it doesn't exist -------
 outputDir <- "survey_responses" 
 
-# Create the output directory if it doesn't exist
 if (!dir.exists(outputDir)) {
   dir.create(outputDir)
 }
@@ -210,7 +244,7 @@ ui <- dashboardPage(
                   id = "intro",
                   h4("Introduction"),
                   img(src = "windfarm.jpg", 
-                      height = "250px", 
+                      height = "400px", 
                       width = "100%"
                   ), #add windfarm image
                   br(),
@@ -409,23 +443,42 @@ ui <- dashboardPage(
       # Third tab content
       tabItem(tabName = "explore_data",
               
-              # Give the page a title
-              titlePanel("Exploring the Choices"),
-              plotOutput("plot"),
+              title = "Exploring the Choices",
               
-              # Slider Input: Use the number of rows from YOUR data (wind_data)
-              sliderInput(
-                "Frequency", 
-                "Number of Respondents", 
-                min = 1, 
-                max = nrow(wind_data), 
-                value = min(100, nrow(wind_data))
+              plotOutput('plot_wind'),
+              
+              hr(),
+              
+              fluidRow(
+                column(3,
+                       h4("Exploring the Choices"),
+                       sliderInput('sampleSize', 'Sample Size', 
+
+                                   min=1, max=nrow(data_wind),
+                                   value=min(1000, nrow(data_wind)), 
+                                   step=100, round=0),
+
+                       br(),
+                       checkboxInput('jitter', 'Jitter'),
+                       checkboxInput('smooth', 'Smooth')
+                ),
+                column(4, offset = 1,
+
+                       selectInput('x', 'X', names(data_wind)),
+                       selectInput('y', 'Y', names(data_wind), names(data_wind)[[2]]),
+                       selectInput('color', 'Color', c('None', names(data_wind)))
+                ),
+                column(4,
+                       selectInput('facet_row', 'Facet Row',
+                                   c(None='.', names(data_wind[sapply(data_wind, is.factor)]))),
+                       selectInput('facet_col', 'Facet Column',
+                                   c(None='.', names(data_wind[sapply(data_wind, is.factor)])))
+                )
               )
-            )
     )
   )
 )
-
+)
 server <- function(input, output, session) {
   
   # --- Setup for Choice Tasks (Inside Server for Multi-User Safety) ---
@@ -625,24 +678,48 @@ server <- function(input, output, session) {
   })
   
   # Exploring data tab
-  output$plot <- renderPlot({
-    
-    # Get the sample size from the slider
-    n_obs <- seq_len(input$frequency)
-    
-    # 1. Select the top 'n' rows for plotting
-    data_to_plot <- wind_data[n_obs, ]
-    
-    # 2. Render a Histogram of the first numeric column ('cost' is assumed)
-    hist(
-      data_to_plot[[numeric_col_name]], 
-      breaks = 20, 
-      main = paste("Histogram of", numeric_col_name, "for", input$frequency, "Observations"),
-      xlab = numeric_col_name
-    )
+  # Sample a subset of the wind_data based on the slider
+  dataset_wind <- reactive({
+
+    data_wind[sample(nrow(data_wind), input$sampleSize), ]
+
   })
+  
+  # Make the main plot for the "Exploring the Choices" tab
+  output$plot_wind <- renderPlot({
+    
+    data_plot <- dataset_wind()
+    
+    # Base plot with user selected x and y
+    p <- ggplot(data_plot, aes_string(x = input$x, y = input$y)) +
+      geom_point()
+    
+    # Add color mapping only if something is selected
+    if (input$color != "None") {
+      p <- p + aes_string(color = input$color)
+    }
+    
+    # Build facet formula from the dropdowns
+    facets <- paste(input$facet_row, "~", input$facet_col)
+    if (facets != ". ~ .") {
+      p <- p + facet_grid(as.formula(facets))
+    }
+    
+    # Optional layers based on checkboxes
+
+    if (isTRUE(input$jitter)) {
+      p <- p + geom_jitter()
+    }
+    
+    if (isTRUE(input$smooth)) {
+      p <- p + geom_smooth(se = FALSE)
+    }
+    
+    print (p)
+    
+    })
+    
 }
 
-enableBookmarking(store = "url")
 # Run the application
 shinyApp(ui = ui, server = server)
