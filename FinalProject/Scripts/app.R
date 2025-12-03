@@ -172,6 +172,7 @@ ui <- dashboardPage(
     sidebarMenu(
       menuItem("Welcome", tabName = "welcome"),
       menuItem("Sample Survey", tabName = "sample_survey"),
+      menuItem("Data Table", tabName ="data_table"),
       menuItem("Explore the Data", tabName ="explore_data")
     )
   ),
@@ -441,6 +442,28 @@ ui <- dashboardPage(
               )
       ),
       # Third tab content
+      tabItem(tabName = "data_table",
+              
+              title = "DataTables",
+              sidebarLayout(
+                sidebarPanel(
+                  conditionalPanel(
+                    "input.dataset === 'data_wind'",
+                    checkboxGroupInput("show_vars", "Columns in data_wind to show:",
+                                       names(data_wind), selected = names(data_wind)
+                        )
+                      )
+                    ),
+                  mainPanel(
+                    tabsetPanel(
+                      id = 'dataset',
+                      tabPanel("data_wind", DT::dataTableOutput("mytable1"))
+              )
+            )
+          )
+        ),
+      
+      # Fourth tab content
       tabItem(tabName = "explore_data",
               
               title = "Exploring the Choices",
@@ -483,17 +506,7 @@ ui <- dashboardPage(
 )
 server <- function(input, output, session) {
   
-  # --- Setup for Choice Tasks (Inside Server for Multi-User Safety) ---
-  nct_shown <- 2
-  
-  # Randomly select the rows from the design matrix
-  rct <- sample(seq_len(nrow(design)), nct_shown)
-  
-  # Create the two choice task tables using the defined function
-  ct_shown_1 <- create_choice_task(rct[1], 1)
-  ct_shown_2 <- create_choice_task(rct[2], 2)
-  
-  # --- Welcome Tab Logic ---
+  # --- Tab 1: Welcome ---
   observeEvent(
     input$goButton, {
       req(input$username)
@@ -521,7 +534,17 @@ server <- function(input, output, session) {
     {input$date}
   ) 
   
-  # --- Survey Tab Logic ---
+  # ---- Tab 2: Survey Tab  ----
+  
+  # --- Setup for Choice Tasks (Inside Server for Multi-User Safety) ---
+  nct_shown <- 2
+  
+  # Randomly select the rows from the design matrix
+  rct <- sample(seq_len(nrow(design)), nct_shown)
+  
+  # Create the two choice task tables using the defined function
+  ct_shown_1 <- create_choice_task(rct[1], 1)
+  ct_shown_2 <- create_choice_task(rct[2], 2)
   
   # Define a set of mandatory fields
   mandatory_fields <- c("gender", "age", "edu")
@@ -679,7 +702,14 @@ server <- function(input, output, session) {
     stopApp()
   })
   
-  # Exploring data tab
+  # ---- Tab 3: Data table -----
+  # choose columns to display
+  data_wind2 = data_wind[sample(nrow(data_wind), 1000), ]
+  output$mytable1 <- DT::renderDataTable({
+    DT::datatable(data_wind2[, input$show_vars, drop = FALSE])
+  })
+  
+  # ---- Tab 4: Explore the data ----
   # Sample a subset of the wind_data based on the slider
   dataset_wind <- reactive({
 
