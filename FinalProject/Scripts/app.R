@@ -464,6 +464,7 @@ ui <- dashboardPage(
                 ),
                 column(4, offset = 1,
 
+
                        selectInput('x', 'X', names(data_wind)),
                        selectInput('y', 'Y', names(data_wind), names(data_wind)[[2]]),
                        selectInput('color', 'Color', c('None', names(data_wind)))
@@ -473,6 +474,7 @@ ui <- dashboardPage(
                                    c(None='.', names(data_wind[sapply(data_wind, is.factor)]))),
                        selectInput('facet_col', 'Facet Column',
                                    c(None='.', names(data_wind[sapply(data_wind, is.factor)])))
+
                 )
               )
     )
